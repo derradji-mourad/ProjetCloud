@@ -158,8 +158,7 @@ export function DetailPanel({
             }
           </div>
 
-          {/* Planting Recommendation Button */}
-          <PlantingRecommendation espaceVert={selectedEspaceVert} />
+
         </div>
       );
     }
@@ -259,7 +258,9 @@ export function DetailPanel({
           </div>
 
           {/* Planting Recommendation Button */}
-          <PlantingRecommendation quartier={selectedQuartier} />
+          <PlantingRecommendation
+            quartier={selectedQuartier}
+          />
 
           <div className="pt-4 border-t border-border">
             <h3 className="font-semibold mb-3 flex items-center gap-2">

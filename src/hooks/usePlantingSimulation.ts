@@ -14,12 +14,21 @@ export interface PlantingPlan {
   biodiversity_score?: number;
 }
 
+export interface TreeSpeciesReco {
+  spece: string;
+  ratio: number;
+}
+
 export interface PlantRecommendation {
   target_type: string;
   target_id: string;
   target_name: string;
   zipcode?: string;
+  type?: string;
+  category?: string;
+  usable_m2?: number;
   trees_count?: number;
+  density_per_ha?: number;
   nb_arbres_possible?: number | null;
   features?: {
     deficit?: number;
@@ -27,6 +36,7 @@ export interface PlantRecommendation {
   };
   score_priorite: number;
   nb_arbres_recommande: number;
+  tree_species_reco?: TreeSpeciesReco[];
   // Legacy fields for backward compatibility
   species?: string;
   location?: string;
@@ -96,13 +106,20 @@ export function usePlantingSimulation(params: PlantingSimulationParams | null) {
                 target_id: r.target_id || 'unknown',
                 target_name: r.target_name || 'Unknown Location',
                 zipcode: r.zipcode,
+                type: r.type,
+                category: r.category,
+                usable_m2: r.usable_m2,
                 trees_count: r.trees_count,
+                density_per_ha: r.density_per_ha,
                 nb_arbres_possible: r.nb_arbres_possible,
                 features: r.features,
                 score_priorite: r.score_priorite || 0,
                 nb_arbres_recommande: r.nb_arbres_recommande || 1,
+                tree_species_reco: r.tree_species_reco,
                 // Legacy mapping
-                species: 'TBD',
+                species: r.tree_species_reco && r.tree_species_reco.length > 0
+                  ? r.tree_species_reco.map((s: any) => s.spece).join(', ')
+                  : 'TBD',
                 location: r.target_name,
                 quantity: r.nb_arbres_recommande || 1,
               }))

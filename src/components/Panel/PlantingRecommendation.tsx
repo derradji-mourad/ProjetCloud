@@ -6,54 +6,62 @@ import { usePlantingSimulation, type PlantingSimulationParams, type PlantingPlan
 import type { EspaceVert, Arrondissement, Quartier } from '@/types/paris';
 
 interface PlantingRecommendationProps {
-  espaceVert?: EspaceVert;
   arrondissement?: Arrondissement;
   quartier?: Quartier;
+
 }
 
-export function PlantingRecommendation({ espaceVert, arrondissement, quartier }: PlantingRecommendationProps) {
+export function PlantingRecommendation({ arrondissement, quartier }: PlantingRecommendationProps) {
   const [showPrediction, setShowPrediction] = useState(false);
   const [expandedPlan, setExpandedPlan] = useState<string | null>(null);
+  const [expandedQuartier, setExpandedQuartier] = useState<string | null>(null);
 
-  // Determine zone parameters
+  // Determine zone parameters - use topK: 20 to limit results
   const params: PlantingSimulationParams | null = showPrediction
-    ? espaceVert
+    ? quartier
       ? {
-        zoneType: 'espace_vert',
-        zoneId: espaceVert.id,
-        includeRoads: false,
-        useSpeciesPerEv: true,
-        topK: 10,
+        zoneType: 'quartier',
+        zoneId: quartier.id, // e.g. "32"
+        includeRoads: true,
+        useSpeciesPerEv: false,
+        topK: 20,
+        maxPerRoad: 10,
         plans: 'impact_max,biodiversite',
       }
-      : quartier
+      : arrondissement
         ? {
-          zoneType: 'quartier',
-          zoneId: quartier.id, // e.g. "32"
+          zoneType: 'arrondissement',
+          // API requires 5-digit zipcode (e.g. 75012), not the 2-digit code
+          zoneId: arrondissement.zipcode || (arrondissement.code ? `750${arrondissement.code.padStart(2, '0')}` : arrondissement.id),
           includeRoads: true,
           useSpeciesPerEv: false,
           topK: 20,
-          maxPerRoad: 8,
+          maxPerRoad: 10,
           plans: 'impact_max,biodiversite',
         }
-        : arrondissement
-          ? {
-            zoneType: 'arrondissement',
-            // API requires 5-digit zipcode (e.g. 75012), not the 2-digit code
-            zoneId: arrondissement.zipcode || (arrondissement.code ? `750${arrondissement.code.padStart(2, '0')}` : arrondissement.id),
-            includeRoads: true,
-            useSpeciesPerEv: false,
-            topK: 20,
-            maxPerRoad: 8,
-            plans: 'impact_max,biodiversite',
-          }
-          : null
+        : null
     : null;
 
   const { data: simulation, isLoading, error } = usePlantingSimulation(params);
 
+  // Group recommendations by quartier/zipcode
+  const groupByQuartier = (recommendations: typeof simulation.plans[0]['recommendations']) => {
+    const groups: Record<string, typeof recommendations> = {};
+    recommendations.forEach(rec => {
+      const key = rec.zipcode || 'Autre';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(rec);
+    });
+    return groups;
+  };
+
   const togglePlan = (planType: string) => {
     setExpandedPlan(expandedPlan === planType ? null : planType);
+    setExpandedQuartier(null); // Reset quartier expansion when changing plans
+  };
+
+  const toggleQuartier = (quartierKey: string) => {
+    setExpandedQuartier(expandedQuartier === quartierKey ? null : quartierKey);
   };
 
   const getPlanDisplayName = (planType: string) => {
@@ -142,6 +150,13 @@ export function PlantingRecommendation({ espaceVert, arrondissement, quartier }:
             </div>
           )}
 
+          {/* Timestamp */}
+          {simulation.generated_at && (
+            <div className="text-xs text-muted-foreground text-center">
+              Généré le: {new Date(simulation.generated_at).toLocaleString('fr-FR')}
+            </div>
+          )}
+
           {/* Plans */}
           {simulation.plans.map((plan: PlantingPlan) => (
             <div key={plan.plan_type} className="border border-border rounded-lg overflow-hidden">
@@ -165,37 +180,108 @@ export function PlantingRecommendation({ espaceVert, arrondissement, quartier }:
 
               {expandedPlan === plan.plan_type && (
                 <div className="p-3 space-y-2 border-t border-border bg-secondary/30">
-                  {plan.recommendations.slice(0, 10).map((rec, idx) => (
-                    <div
-                      key={idx}
-                      className="p-2 rounded bg-background flex items-start justify-between"
-                    >
-                      <div className="flex-1">
-                        <div className="font-medium text-sm">{rec.target_name}</div>
-                        <div className="text-xs text-muted-foreground italic">
-                          Priorité: {rec.score_priorite}/100
-                        </div>
-                        {rec.zipcode && (
-                          <div className="text-xs text-muted-foreground mt-1">
-                            {rec.zipcode}
+                  {(() => {
+                    const grouped = groupByQuartier(plan.recommendations);
+                    return Object.entries(grouped).map(([quartierKey, recs]) => (
+                      <div key={quartierKey} className="border border-border/50 rounded-lg overflow-hidden">
+                        <button
+                          onClick={() => toggleQuartier(`${plan.plan_type}-${quartierKey}`)}
+                          className="w-full p-2 flex items-center justify-between bg-muted/50 hover:bg-muted transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            <MapPin className="h-3 w-3 text-primary" />
+                            <span className="text-sm font-medium">{quartierKey}</span>
+                            <span className="text-xs text-muted-foreground">
+                              ({recs.length} lieux)
+                            </span>
+                          </div>
+                          {expandedQuartier === `${plan.plan_type}-${quartierKey}` ? (
+                            <ChevronUp className="h-3 w-3 text-muted-foreground" />
+                          ) : (
+                            <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                          )}
+                        </button>
+
+                        {expandedQuartier === `${plan.plan_type}-${quartierKey}` && (
+                          <div className="p-2 space-y-2 bg-background">
+                            {recs.map((rec, idx) => (
+                              <div
+                                key={idx}
+                                className="p-3 rounded-lg bg-secondary/20 border border-border/30 shadow-sm"
+                              >
+                                <div className="flex items-start justify-between mb-2">
+                                  <div className="flex-1">
+                                    <div className="font-medium text-sm">{rec.target_name}</div>
+                                    <div className="flex flex-wrap gap-2 mt-1">
+                                      {rec.category && (
+                                        <span className="text-[10px] px-1.5 py-0.5 bg-secondary text-secondary-foreground rounded border border-border">
+                                          {rec.category}
+                                        </span>
+                                      )}
+                                      {rec.type && rec.type !== rec.category && (
+                                        <span className="text-[10px] px-1.5 py-0.5 bg-muted text-muted-foreground rounded">
+                                          {rec.type}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-col items-end gap-1">
+                                    {rec.nb_arbres_recommande && rec.nb_arbres_recommande > 0 && (
+                                      <span className={cn(
+                                        "px-2 py-0.5 rounded-full text-xs font-medium",
+                                        "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                      )}>
+                                        +{rec.nb_arbres_recommande} arbres
+                                      </span>
+                                    )}
+                                    <span className="text-[10px] text-muted-foreground font-mono">
+                                      Score: {rec.score_priorite}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground mb-2">
+                                  {rec.usable_m2 !== undefined && rec.usable_m2 > 0 && (
+                                    <div className="flex items-center gap-1">
+                                      <span className="font-medium text-foreground">{rec.usable_m2.toLocaleString()} m²</span>
+                                      <span>utilisables</span>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {rec.tree_species_reco && rec.tree_species_reco.length > 0 && (
+                                  <div className="mt-2 pt-2 border-t border-border/50">
+                                    <span className="text-[10px] uppercase text-muted-foreground font-semibold">Espèces recommandées</span>
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                      {rec.tree_species_reco.map((spec, i) => (
+                                        <span
+                                          key={i}
+                                          className="text-xs px-2 py-1 bg-primary/5 text-primary rounded-md flex items-center gap-1"
+                                          title={`Ratio recommandé: ${Math.round(spec.ratio * 100)}%`}
+                                        >
+                                          {spec.spece}
+                                          <span className="text-[10px] opacity-60">
+                                            {Math.round(spec.ratio * 100)}%
+                                          </span>
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Technical Details - Compact */}
+                                <div className="mt-2 pt-2 border-t border-border/50 text-[10px] text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
+                                  <span>Densité: <span className="font-mono">{rec.density_per_ha ? rec.density_per_ha.toFixed(1) : 0}/ha</span></span>
+                                  <span>Existants: <span className="font-mono">{rec.trees_count}</span></span>
+                                  <span>Capacité: <span className="font-mono">{rec.nb_arbres_possible}</span></span>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>
-                      {rec.nb_arbres_recommande && rec.nb_arbres_recommande > 0 && (
-                        <span className={cn(
-                          "px-2 py-0.5 rounded-full text-xs font-medium",
-                          "bg-primary/10 text-primary"
-                        )}>
-                          +{rec.nb_arbres_recommande} arbres
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                  {plan.recommendations.length > 10 && (
-                    <p className="text-xs text-muted-foreground text-center pt-2">
-                      +{plan.recommendations.length - 10} autres recommandations
-                    </p>
-                  )}
+                    ));
+                  })()}
                 </div>
               )}
             </div>
