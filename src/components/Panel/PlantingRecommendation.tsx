@@ -271,8 +271,12 @@ export function PlantingRecommendation({ arrondissement, quartier }: PlantingRec
 
                                 {/* Technical Details - Compact */}
                                 <div className="mt-2 pt-2 border-t border-border/50 text-[10px] text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
-                                  <span>Densité: <span className="font-mono">{rec.density_per_ha ? rec.density_per_ha.toFixed(1) : 0}/ha</span></span>
-                                  <span>Existants: <span className="font-mono">{rec.trees_count}</span></span>
+                                  {rec.density_per_ha && rec.density_per_ha > 0 ? (
+                                    <span>Densité: <span className="font-mono">{rec.density_per_ha.toFixed(1)}/ha</span></span>
+                                  ) : null}
+                                  {rec.trees_count && rec.trees_count > 0 ? (
+                                    <span>Existants: <span className="font-mono">{rec.trees_count}</span></span>
+                                  ) : null}
                                   <span>Capacité: <span className="font-mono">{rec.nb_arbres_possible}</span></span>
                                 </div>
                               </div>
