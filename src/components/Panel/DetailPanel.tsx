@@ -5,10 +5,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+import { format, isToday } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import type { Arrondissement, Quartier, EspaceVert, ViewLevel } from '@/types/paris';
 import { usePollutionData, getPollutionLevel, getPollutionLevelByValue } from '@/hooks/usePollutionData';
+import { useAirQuality, getAQILevel } from '@/hooks/useAirQuality';
 import { PlantingRecommendation } from './PlantingRecommendation';
 interface DetailPanelProps {
   isOpen: boolean;
@@ -45,6 +46,7 @@ export function DetailPanel({
 
   // Fetch pollution data for selected date
   const { data: pollutionData, isLoading: isLoadingPollution } = usePollutionData(dateStr, dateStr);
+  const { data: airQuality } = useAirQuality(selectedQuartier?.id);
 
   // Filter based on selection
   const filteredQuartiers = selectedArrondissement
@@ -165,10 +167,17 @@ export function DetailPanel({
 
     // Show espaces verts list for selected quartier
     if (level === 'espaces-verts' && selectedQuartier) {
-      // Get pollution level from average PM10 value
-      const pollutionLevel = pollutionData?.average
-        ? getPollutionLevelByValue(pollutionData.average.PM10)
-        : null;
+      // Determine which data to show
+      const isCurrentDay = isToday(selectedDate);
+      const showRealTime = isCurrentDay && airQuality;
+
+      // Get display values
+      let displayLevel = null;
+      if (showRealTime && airQuality) {
+        displayLevel = getAQILevel(airQuality.european_aqi);
+      } else if (pollutionData?.average) {
+        displayLevel = getPollutionLevelByValue(pollutionData.average.PM10);
+      }
 
       return (
         <div className="space-y-4">
@@ -219,37 +228,61 @@ export function DetailPanel({
               </Popover>
             </div>
 
-            {pollutionData && pollutionLevel ? (
+            {(showRealTime || pollutionData) && displayLevel ? (
               <div className="space-y-3">
-                {/* Main Pollution Display - using average indice_urbain */}
+                {/* Main Pollution Display */}
                 <div className="flex items-center gap-3">
-                  <div className={cn("px-3 py-1.5 rounded-full font-bold text-lg", pollutionLevel.bgColor, pollutionLevel.color)}>
-                    {pollutionData.average.indice_urbain.toFixed(2)}
+                  <div className={cn("px-3 py-1.5 rounded-full font-bold text-lg", displayLevel.bgColor, displayLevel.color)}>
+                    {showRealTime && airQuality
+                      ? airQuality.european_aqi
+                      : pollutionData?.average.indice_urbain.toFixed(2)}
                   </div>
                   <div>
-                    <div className={cn("font-semibold", pollutionLevel.color)}>{pollutionLevel.label}</div>
-                    <div className="text-xs text-muted-foreground">Indice Urbain</div>
+                    <div className={cn("font-semibold", displayLevel.color)}>{displayLevel.label}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {showRealTime ? 'Indice AQI (Europe)' : 'Indice Urbain'}
+                    </div>
                   </div>
                 </div>
 
-                {/* Pollutant Details - using available data */}
+                {/* Pollutant Details */}
                 <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border">
                   <div className="p-2 rounded bg-background">
                     <div className="text-xs text-muted-foreground">PM10</div>
-                    <div className="font-semibold">{pollutionData.average.PM10.toFixed(1)} <span className="text-xs font-normal">µg/m³</span></div>
+                    <div className="font-semibold">
+                      {showRealTime && airQuality
+                        ? airQuality.pm10
+                        : pollutionData?.average.PM10.toFixed(1)}
+                      <span className="text-xs font-normal"> µg/m³</span>
+                    </div>
                   </div>
                   <div className="p-2 rounded bg-background">
                     <div className="text-xs text-muted-foreground">NO₂</div>
-                    <div className="font-semibold">{pollutionData.average.NO2.toFixed(1)} <span className="text-xs font-normal">µg/m³</span></div>
+                    <div className="font-semibold">
+                      {showRealTime && airQuality
+                        ? airQuality.nitrogen_dioxide
+                        : pollutionData?.average.NO2.toFixed(1)}
+                      <span className="text-xs font-normal"> µg/m³</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Period Info */}
-                <div className="text-xs text-muted-foreground text-right">
-                  Période: {pollutionData.periode}
-                </div>
-                <div className="text-xs text-muted-foreground text-right">
-                  Source: {pollutionData.source}
+                {/* Period / Update Info */}
+                <div className="flex flex-col items-end">
+                  {showRealTime && airQuality ? (
+                    <div className="text-xs text-muted-foreground text-right">
+                      Mise à jour: {format(new Date(airQuality.time), "HH:mm", { locale: fr })}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-muted-foreground text-right">
+                      Période: {pollutionData?.periode}
+                    </div>
+                  )}
+                  {!showRealTime && pollutionData && (
+                    <div className="text-xs text-muted-foreground text-right">
+                      Source: {pollutionData.source}
+                    </div>
+                  )}
                 </div>
               </div>
             ) : !isLoadingPollution ? (
